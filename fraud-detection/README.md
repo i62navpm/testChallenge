@@ -1,8 +1,8 @@
-#Getting Started
+# Getting Started
 Install the dependencies by running `yarn`
 
-#Build and Test
+# Build and Test
 Run the tests using `yarn test`
 
-#Run by CLI
+# Run by CLI
 Use `node index.js --file <TEXT FILE>`
