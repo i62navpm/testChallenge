@@ -1,4 +1,4 @@
-function Count (input) {
+function Count(input) {
   throw new Error('Not implemented')
 }
 
