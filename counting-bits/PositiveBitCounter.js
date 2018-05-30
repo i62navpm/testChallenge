@@ -24,9 +24,9 @@ function Count(input = 0) {
 
   const binaryNumber = decimaltoBinary()
   const numberOnes = countOnes(binaryNumber)
-  const positionOnes = getOnesPositions(binaryNumber)
+  const listPositionsOnes = getOnesPositions(binaryNumber)
 
-  return [numberOnes, ...positionOnes]
+  return [numberOnes, ...listPositionsOnes]
 }
 
 module.exports = { Count }
