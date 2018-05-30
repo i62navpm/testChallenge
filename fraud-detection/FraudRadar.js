@@ -1,74 +1,127 @@
 const fs = require('fs')
 
-function Check (filePath) {
-  // READ FRAUD LINES
-  let orders = []
-  let fraudResults = []
+class CheckClass {
+  constructor(file) {
+    this.file = null
+  }
 
-  let fileContent = fs.readFileSync(filePath, 'utf8')
-  let lines = fileContent.split('\n')
-  for (let line of lines) {
-    let items = line.split(',')
-    let order = {
-      orderId: Number(items[0]),
-      dealId: Number(items[1]),
-      email: items[2].toLowerCase(),
-      street: items[3].toLowerCase(),
-      city: items[4].toLowerCase(),
-      state: items[5].toLowerCase(),
-      zipCode: items[6],
-      creditCard: items[7]
+  Check(file) {
+    this.file = file
+    return this.activate()
+  }
+
+  async activate() {
+    try {
+      let orders = await this.streamFile(this.file)
+      return this.checkFraud(orders)
+    } catch (err) {
+      return new Error(err)
     }
-    orders.push(order)
   }
 
-  // NORMALIZE
-  for (let order of orders) {
-    // Normalize email
-    let aux = order.email.split('@')
-    let atIndex = aux[0].indexOf('+')
-    aux[0] = atIndex < 0 ? aux[0].replace('.', '') : aux[0].replace('.', '').substring(0, atIndex - 1)
-    order.email = aux.join('@')
+  streamFile(file = '') {
+    const stream = fs.createReadStream(file, { encoding: 'utf8' })
 
-    // Normalize street
-    order.street = order.street.replace('st.', 'street').replace('rd.', 'road')
-
-    // Normalize state
-    order.state = order.street.replace('il', 'illinois').replace('ca', 'california').replace('ny', 'new york')
+    return new Promise((resolve, reject) => {
+      stream.on('data', orders => {
+        resolve(this.parseOrders(orders.split('\n')))
+        stream.destroy()
+      })
+      stream.on('error', err => reject(err))
+    })
   }
 
-  // CHECK FRAUD
-  for (let i = 0; i < orders.length; i++) {
-    let current = orders[i]
-    let isFraudulent = false
+  parseOrders(orders) {
+    return orders.map(order => {
+      let [orderId, dealId, email, street, city, state, zipCode, creditCard] = order.split(',')
 
-    for (let j = i + 1; j < orders.length; j++) {
-      isFraudulent = false
-      if (current.dealId === orders[j].dealId
-        && current.email === orders[j].email
-        && current.creditCard !== orders[j].creditCard) {
-          isFraudulent = true
-        }
-      
-      if (current.dealId === orders[j].dealId
-        && current.state === orders[j].state
-        && current.zipCode === orders[j].zipCode
-        && current.street === orders[j].street
-        && current.city === orders[j].city
-        && current.creditCard !== orders[j].creditCard) {
-          isFraudulent = true
-        }
-      
-      if (isFraudulent) {
-        fraudResults.push({
-          isFraudulent: true,
-          orderId: orders[j].orderId
-        })
+      orderId = +orderId
+      dealId = +dealId
+      email = email.toLowerCase()
+      street = street.toLowerCase()
+      city = city.toLowerCase()
+      state = state.toLowerCase()
+
+      return {
+        orderId,
+        dealId,
+        email: this.normalizeEmail(email),
+        street: this.normalizeStreet(street),
+        city,
+        state: this.normalizeState(state),
+        zipCode,
+        creditCard,
       }
-    }
+    })
   }
 
-  return fraudResults
+  normalizeEmail(email) {
+    return email.replace(
+      /(.*)(?:\+.*)(@.*)/gm,
+      (email, name, domain) => name.replace(/\./g, '') + domain
+    )
+  }
+
+  normalizeStreet(street) {
+    const abbreviation = { 'st.': 'street', 'rd.': 'road' }
+
+    Object.keys(abbreviation).forEach(key => {
+      street = street.replace(key, abbreviation[key])
+    })
+    return street
+  }
+
+  normalizeState(state) {
+    const abbreviation = {
+      il: 'illinois',
+      ca: 'california',
+      cl: 'colorado',
+      ny: 'new york',
+    }
+
+    Object.keys(abbreviation).forEach(key => {
+      state = state.replace(key, abbreviation[key])
+    })
+    return state
+  }
+
+  isSameEmail(orderA, orderB) {
+    return orderA.email === orderB.email
+  }
+
+  isSameAddress(orderA, orderB) {
+    return (
+      orderA.state === orderB.state &&
+      orderA.zipCode === orderB.zipCode &&
+      orderA.street === orderB.street &&
+      orderA.city === orderB.city
+    )
+  }
+
+  isSameCreditCard(orderA, orderB) {
+    return orderA.creditCard === orderB.creditCard
+  }
+
+  checkFraud(orders) {
+    const orderDict = orders.reduce(
+      (after, before) => ({ ...after, ...{ [before.dealId]: before } }),
+      {}
+    )
+
+    return orders.reduce((after, order) => {
+      const orderB = orderDict[order.dealId]
+      const checkFraudEmail =
+        this.isSameEmail(order, orderB) && !this.isSameCreditCard(order, orderB)
+      const checkFraudAddress =
+        this.isSameAddress(order, orderB) && !this.isSameCreditCard(order, orderB)
+
+      return checkFraudEmail || checkFraudAddress
+        ? [...after, { isFraudulent: true, orderId: orderB.orderId }]
+        : after
+    }, [])
+  }
 }
 
-module.exports = { Check }
+let checkObj = new CheckClass()
+
+module.exports = { Check: checkObj.Check.bind(checkObj) }
